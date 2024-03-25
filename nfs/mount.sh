@@ -1,0 +1,1 @@
+sudo mount -v -o vers=4,loud localhost:/ /mnt
