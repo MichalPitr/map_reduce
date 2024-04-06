@@ -19,13 +19,15 @@ import (
 
 func main() {
 	mode := flag.String("mode", "", "Mode of operation: master, mapper, reducer.")
+	workflow := flag.String("workflow", "", "Name of the workflow to which this job belongs.")
+	jobId := flag.String("jobId", "", "Job's identification number.")
 	flag.Parse()
 
 	switch *mode {
 	case "master":
 		runMaster()
 	case "mapper":
-		runMapper()
+		runMapper(*workflow, *jobId)
 	case "reducer":
 		runReducer()
 	default:
@@ -45,7 +47,7 @@ func runMaster() {
 	jobName := fmt.Sprintf("job-%s", time.Now().Format("2006-01-02-15-04-05"))
 
 	// Host nfs mount.
-	err := os.Mkdir("/mnt/"+jobName, 0o777)
+	err := os.Mkdir("/mnt/"+jobName, 0777)
 	if err != nil {
 		log.Printf("Error creating job folder: %v", err)
 		os.Exit(1)
@@ -58,8 +60,13 @@ func runMaster() {
 	log.Println("Pod created successfully")
 }
 
-func runMapper() {
+func runMapper(worfklow, jobId string) {
 	log.Printf("Running mapper...")
+	outputDir := "/mnt/nfs/" + worfklow + "/" + jobId
+	os.Mkdir(outputDir, 0777)
+	file := outputDir + "/result1.txt"
+	data := []byte(fmt.Sprintf("Hello world from job %s", jobId))
+	os.WriteFile(file, data, 0777)
 }
 
 func runReducer() {
@@ -100,7 +107,9 @@ func getNumberOfNodes(clientset *kubernetes.Clientset) int {
 func lunchJobs(clientset *kubernetes.Clientset, jobName string, numJobs int) {
 	for i := 0; i < numJobs; i++ {
 		jobId := fmt.Sprintf("%s-job-%d", jobName, i+1)
-		job := createJobSpec(jobName, jobId)
+
+		// job := createJobSpec(jobName, jobId)
+		job := createMapperJobSpec(jobName, jobId)
 		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})
 		if err != nil {
 			log.Printf("Failed to create a job: %v", err)
@@ -135,6 +144,48 @@ func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName string) {
 
 		log.Println("Waiting for jobs to finish.")
 		time.Sleep(10 * time.Second)
+	}
+}
+
+func createMapperJobSpec(jobName, jobId string) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobId,
+			Namespace: "default",
+			Labels: map[string]string{
+				"job-group": jobName,
+			},
+		},
+		Spec: batchv1.JobSpec{
+			Template: v1.PodTemplateSpec{
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:    "worker",
+							Image:   "michalpitr/mapreduce:latest",
+							Command: []string{"./mapreduce", "--mode", "mapper", "--workflow", jobName, "--jobId", jobId},
+							VolumeMounts: []v1.VolumeMount{
+								{
+									Name:      "nfs-storage",
+									MountPath: "/mnt/nfs",
+								},
+							},
+						},
+					},
+					Volumes: []v1.Volume{
+						{
+							Name: "nfs-storage",
+							VolumeSource: v1.VolumeSource{
+								PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "nfs-pvc",
+								},
+							},
+						},
+					},
+					RestartPolicy: v1.RestartPolicyNever,
+				},
+			},
+		},
 	}
 }
 
