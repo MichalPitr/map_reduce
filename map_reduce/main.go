@@ -45,7 +45,7 @@ func runMaster() {
 	jobName := fmt.Sprintf("job-%s", time.Now().Format("2006-01-02-15-04-05"))
 
 	// Host nfs mount.
-	err := os.Mkdir("/mnt/"+jobName, 777)
+	err := os.Mkdir("/mnt/"+jobName, 0o777)
 	if err != nil {
 		log.Printf("Error creating job folder: %v", err)
 		os.Exit(1)
@@ -154,7 +154,12 @@ func createJobSpec(jobName, jobId string) *batchv1.Job {
 						{
 							Name:    "worker",
 							Image:   "alpine",
-							Command: []string{"/bin/sh", "-c", "mkdir -p /mnt/nfs/" + jobName + "/" + jobId + " && sleep 120"},
+							Command: []string{"/bin/sh", "-c"},
+							Args: []string{
+								"mkdir -p /mnt/nfs/" + jobName + "/" + jobId + ";" +
+									"sleep 60;" +
+									"echo 'hello world' > /mnt/nfs/" + jobName + "/" + jobId + "/result1.txt",
+							},
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "nfs-storage",
@@ -178,35 +183,4 @@ func createJobSpec(jobName, jobId string) *batchv1.Job {
 			},
 		},
 	}
-}
-
-var pod = &v1.Pod{
-	ObjectMeta: metav1.ObjectMeta{
-		Name: "nfs-test-pod",
-	},
-	Spec: v1.PodSpec{
-		Containers: []v1.Container{
-			{
-				Name:    "alpine",
-				Image:   "alpine",
-				Command: []string{"/bin/sh", "-c", "echo Hello World > /mnt/nfs/hello.txt && sleep 3600"},
-				VolumeMounts: []v1.VolumeMount{
-					{
-						Name:      "nfs-storage",
-						MountPath: "/mnt/nfs",
-					},
-				},
-			},
-		},
-		Volumes: []v1.Volume{
-			{
-				Name: "nfs-storage",
-				VolumeSource: v1.VolumeSource{
-					PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-						ClaimName: "nfs-pvc",
-					},
-				},
-			},
-		},
-	},
 }
