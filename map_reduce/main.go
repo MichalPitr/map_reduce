@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -18,16 +23,21 @@ import (
 )
 
 func main() {
+	// Common flags
 	mode := flag.String("mode", "", "Mode of operation: master, mapper, reducer.")
-	workflow := flag.String("workflow", "", "Name of the workflow to which this job belongs.")
-	jobId := flag.String("jobId", "", "Job's identification number.")
+	inputDir := flag.String("input-dir", "", "Path to input directory.")
+
+	// Mapper and Reducer flags
+	fileRange := flag.String("file-range", "", "File ranges of files to be processed. Format `prefix-start-end`")
+	outputDir := flag.String("output-dir", "", "Path to output directory.")
+
 	flag.Parse()
 
 	switch *mode {
 	case "master":
-		runMaster()
+		runMaster(*inputDir)
 	case "mapper":
-		runMapper(*workflow, *jobId)
+		runMapper(*fileRange, *inputDir, *outputDir)
 	case "reducer":
 		runReducer()
 	default:
@@ -36,7 +46,7 @@ func main() {
 	}
 }
 
-func runMaster() {
+func runMaster(inputDir string) {
 	log.Printf("Running master...")
 	clientset := createKubernetesClient()
 	numNodes := getNumberOfNodes(clientset)
@@ -53,20 +63,138 @@ func runMaster() {
 		os.Exit(1)
 	}
 
-	// TODO: partition input files.
+	fileRanges := partitionInputFiles(inputDir, numNodes)
+	fmt.Println(fileRanges)
 
-	lunchJobs(clientset, jobName, numNodes)
+	startTime := time.Now()
+	lunchJobs(clientset, jobName, numNodes, fileRanges)
 	waitForJobsToComplete(clientset, jobName)
-	log.Println("Pod created successfully")
+	log.Printf("Mappers took %v to finish", time.Since(startTime))
 }
 
-func runMapper(worfklow, jobId string) {
+func partitionInputFiles(inputDir string, partitions int) []string {
+	entries, err := os.ReadDir(inputDir)
+	if err != nil {
+		log.Printf("Failed to read contents of %s, error: %v", inputDir, err)
+		os.Exit(1)
+	}
+	files := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		files = append(files, entry.Name())
+	}
+
+	slices.Sort(files)
+	fileRanges := make([]string, partitions)
+	filesInPartition := len(files) / partitions
+
+	extra := len(files) % partitions
+	currentStart := 0
+	for i := 0; i < partitions; i++ {
+		currentEnd := currentStart + filesInPartition - 1
+		if extra > 0 {
+			currentEnd++
+			extra--
+		}
+		first := strings.Split(files[currentStart], "-")
+		last := strings.Split(files[currentEnd], "-")
+		fileRange := first[0] + "-" + first[1] + "-" + last[1]
+		fileRanges[i] = fileRange
+
+		currentStart = currentEnd + 1
+	}
+
+	return fileRanges
+}
+
+func runMapper(fileRange, inputDir, outputDir string) {
 	log.Printf("Running mapper...")
-	outputDir := "/mnt/nfs/" + worfklow + "/" + jobId
-	os.Mkdir(outputDir, 0777)
-	file := outputDir + "/result1.txt"
-	data := []byte(fmt.Sprintf("Hello world from job %s", jobId))
-	os.WriteFile(file, data, 0777)
+
+	substrings := strings.Split(fileRange, "-")
+	if len(substrings) != 3 {
+		log.Printf("Expected file range in format prefix-start-end but got %s.", fileRange)
+		os.Exit(1)
+	}
+	prefix := substrings[0]
+	start, err := strconv.Atoi(substrings[1])
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+	end, err := strconv.Atoi(substrings[2])
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+
+	// Prepare output dir
+	if err := os.MkdirAll(outputDir, 0777); err != nil {
+		log.Printf("Creating directory %s failed: %v", outputDir, err)
+		os.Exit(1)
+	}
+
+	// Do Mapper operation. This should be the pluggable part defined by user.
+	wordFreq := make(map[string]int)
+	re := regexp.MustCompile(`\b\w+\b`)
+	for i := start; i <= end; i++ {
+		fileName := fmt.Sprintf("%s-%d", prefix, i)
+
+		file, err := os.Open(inputDir + fileName)
+		if err != nil {
+			fmt.Println("Error opening file:", err)
+			os.Exit(1)
+		}
+		defer file.Close()
+
+		// Create a scanner to read the file
+		scanner := bufio.NewScanner(file)
+
+		// Iterate over each line in the file
+		for scanner.Scan() {
+			// Split the line into words
+			line := scanner.Text()
+			line = strings.ToLower(line)
+			words := re.FindAllString(line, -1)
+			// words := strings.Fields(line)
+
+			// Iterate over each word
+			for _, word := range words {
+				wordFreq[word]++
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			fmt.Println("Error reading from file:", err)
+		}
+	}
+
+	// Save result to NFS storage
+	file, err := os.Create(outputDir + "output.csv")
+	if err != nil {
+		log.Printf("Failed to create a file: %v", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	// Create a buffered writer
+	writer := bufio.NewWriter(file)
+
+	// Iterate over the map and write to file
+	for key, value := range wordFreq {
+		line := fmt.Sprintf("%s,%d\n", key, value)
+		if _, err := writer.WriteString(line); err != nil {
+			log.Printf("Failed to create a file: %v", err)
+			os.Exit(1)
+		}
+	}
+
+	// Flush any buffered data
+	if err := writer.Flush(); err != nil {
+		log.Printf("Failed to create a file: %v", err)
+		os.Exit(1)
+	}
 }
 
 func runReducer() {
@@ -104,12 +232,13 @@ func getNumberOfNodes(clientset *kubernetes.Clientset) int {
 	return len(nodes.Items)
 }
 
-func lunchJobs(clientset *kubernetes.Clientset, jobName string, numJobs int) {
+func lunchJobs(clientset *kubernetes.Clientset, jobName string, numJobs int, fileRanges []string) {
 	for i := 0; i < numJobs; i++ {
 		jobId := fmt.Sprintf("%s-job-%d", jobName, i+1)
-
+		_ = clientset
 		// job := createJobSpec(jobName, jobId)
-		job := createMapperJobSpec(jobName, jobId)
+		fmt.Printf("Creating mapper %s for %s\n", jobId, fileRanges[i])
+		job := createMapperJobSpec(jobName, jobId, fileRanges[i])
 		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})
 		if err != nil {
 			log.Printf("Failed to create a job: %v", err)
@@ -147,7 +276,10 @@ func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName string) {
 	}
 }
 
-func createMapperJobSpec(jobName, jobId string) *batchv1.Job {
+func createMapperJobSpec(jobName, jobId, fileRange string) *batchv1.Job {
+	nfsBaseDir := "/mnt/nfs/"
+	inputDir := nfsBaseDir + "input/"
+	outputDir := nfsBaseDir + jobName + "/" + jobId + "/"
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobId,
@@ -163,7 +295,7 @@ func createMapperJobSpec(jobName, jobId string) *batchv1.Job {
 						{
 							Name:    "worker",
 							Image:   "michalpitr/mapreduce:latest",
-							Command: []string{"./mapreduce", "--mode", "mapper", "--workflow", jobName, "--jobId", jobId},
+							Command: []string{"./mapreduce", "--mode", "mapper", "--input-dir", inputDir, "--output-dir", outputDir, "--file-range", fileRange},
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "nfs-storage",
