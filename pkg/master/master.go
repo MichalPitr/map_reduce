@@ -118,7 +118,6 @@ func lunchJobs(clientset *kubernetes.Clientset, jobName string, numJobs int, fil
 	for i := 0; i < numJobs; i++ {
 		jobId := fmt.Sprintf("%s-job-%d", jobName, i+1)
 		_ = clientset
-		// job := createJobSpec(jobName, jobId)
 		fmt.Printf("Creating mapper %s for %s\n", jobId, fileRanges[i])
 		job := createMapperJobSpec(jobName, jobId, fileRanges[i])
 		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})

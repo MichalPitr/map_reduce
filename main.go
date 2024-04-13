@@ -21,6 +21,7 @@ func (wc *WordCounter) Map(input interfaces.MapInput, emit func(key, value strin
 
 func main() {
 	cfg := config.ParseFlags()
+	cfg.NumMachines = 2
 	mapper.RegisterMapper(cfg, "WordCounter", func() interfaces.Mapper { return &WordCounter{} })
 	mapreduce.Execute(cfg)
 }

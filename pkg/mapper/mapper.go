@@ -2,8 +2,9 @@ package mapper
 
 import (
 	"bufio"
-	"encoding/csv"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"log"
 	"os"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 	"github.com/MichalPitr/map_reduce/pkg/config"
 	"github.com/MichalPitr/map_reduce/pkg/interfaces"
 )
+
+var fnvHash hash.Hash32 = fnv.New32a()
 
 // TextInput implements the MapInput interface for simple strings.
 type TextInput struct {
@@ -77,7 +80,7 @@ func processFiles(cfg *config.Config, mapper interfaces.Mapper) {
 		}
 	}
 
-	writeToCSV(cfg.OutputDir, "output.csv", intermediate)
+	flushData(cfg.OutputDir, cfg.NumMachines, intermediate)
 }
 
 func parseFileRange(fileRange string) (string, int, int) {
@@ -100,34 +103,36 @@ func parseFileRange(fileRange string) (string, int, int) {
 	return prefix, start, end
 }
 
-// writeToCSV takes a map of keys to slices of values and writes them to a CSV file.
-func writeToCSV(outputDir, filename string, data map[string][]string) {
-	// Create the output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		log.Fatalf("Failed to create output directory: %v", err)
+func flushData(outputDir string, numMachines int, intermediate map[string][]string) {
+	for key, values := range intermediate {
+		partition := getKeyPartition(key, numMachines)
+		fileName := fmt.Sprintf("%s/partition-%d", outputDir, partition)
+		writeToFile(fileName, key, values)
 	}
+}
 
-	// Open a file for writing
-	filePath := outputDir + "/" + filename
-	file, err := os.Create(filePath)
+func writeToFile(fileName, key string, values []string) {
+	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatalf("Failed to create file: %v", err)
+		log.Fatalf("Failed to open file %s: %v", fileName, err)
 	}
 	defer file.Close()
 
-	// Create a CSV writer
-	writer := csv.NewWriter(file)
+	writer := bufio.NewWriter(file)
 	defer writer.Flush()
-
-	// Iterate over the data and write to the CSV file
-	for key, values := range data {
-		for _, value := range values {
-			record := []string{key, value}
-			if err := writer.Write(record); err != nil {
-				log.Fatalf("Failed to write record to CSV: %v", err)
-			}
+	for _, value := range values {
+		_, err = writer.WriteString(fmt.Sprintf("%s,%s\n", key, value))
+		if err != nil {
+			log.Fatalf("Failed to write to file %s: %v", fileName, err)
 		}
 	}
+}
 
-	log.Printf("Data successfully written to %s", filePath)
+func getKeyPartition(key string, numPartitions int) int {
+	hash, err := fnvHash.Write([]byte(key))
+	if err != nil {
+		log.Fatalf("Error calculating hash: %v", err)
+	}
+	defer fnvHash.Reset()
+	return hash % numPartitions
 }

@@ -5,7 +5,7 @@ type Mapper interface {
 }
 
 type Reducer interface {
-	Reduce(input ReduceInput) []KeyValue
+	Reduce(input ReduceInput, emit func(int)) []KeyValue
 }
 
 type MapInput interface {
