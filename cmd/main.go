@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MichalPitr/map_reduce/tree/main/map_reduce/pkg/config"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,30 +24,22 @@ import (
 )
 
 func main() {
-	// Common flags
-	mode := flag.String("mode", "", "Mode of operation: master, mapper, reducer.")
-	inputDir := flag.String("input-dir", "", "Path to input directory.")
+	cfg := config.ParseFlags()
 
-	// Mapper and Reducer flags
-	fileRange := flag.String("file-range", "", "File ranges of files to be processed. Format `prefix-start-end`")
-	outputDir := flag.String("output-dir", "", "Path to output directory.")
-
-	flag.Parse()
-
-	switch *mode {
+	switch cfg.Mode {
 	case "master":
-		runMaster(*inputDir)
+		runMaster(cfg)
 	case "mapper":
-		runMapper(*fileRange, *inputDir, *outputDir)
+		runMapper(cfg)
 	case "reducer":
-		runReducer()
+		runReducer(cfg)
 	default:
-		log.Printf("Invalid mode specified: %q", *mode)
+		log.Printf("Invalid mode specified: %q", cfg.Mode)
 		os.Exit(128)
 	}
 }
 
-func runMaster(inputDir string) {
+func runMaster(cfg *config.Config) {
 	log.Printf("Running master...")
 	clientset := createKubernetesClient()
 	numNodes := getNumberOfNodes(clientset)
@@ -63,7 +56,7 @@ func runMaster(inputDir string) {
 		os.Exit(1)
 	}
 
-	fileRanges := partitionInputFiles(inputDir, numNodes)
+	fileRanges := partitionInputFiles(cfg.InputDir, numNodes)
 	fmt.Println(fileRanges)
 
 	startTime := time.Now()
@@ -109,12 +102,12 @@ func partitionInputFiles(inputDir string, partitions int) []string {
 	return fileRanges
 }
 
-func runMapper(fileRange, inputDir, outputDir string) {
+func runMapper(cfg *config.Config) {
 	log.Printf("Running mapper...")
 
-	substrings := strings.Split(fileRange, "-")
+	substrings := strings.Split(cfg.FileRange, "-")
 	if len(substrings) != 3 {
-		log.Printf("Expected file range in format prefix-start-end but got %s.", fileRange)
+		log.Printf("Expected file range in format prefix-start-end but got %s.", cfg.FileRange)
 		os.Exit(1)
 	}
 	prefix := substrings[0]
@@ -130,8 +123,8 @@ func runMapper(fileRange, inputDir, outputDir string) {
 	}
 
 	// Prepare output dir
-	if err := os.MkdirAll(outputDir, 0777); err != nil {
-		log.Printf("Creating directory %s failed: %v", outputDir, err)
+	if err := os.MkdirAll(cfg.OutputDir, 0777); err != nil {
+		log.Printf("Creating directory %s failed: %v", cfg.OutputDir, err)
 		os.Exit(1)
 	}
 
@@ -141,7 +134,7 @@ func runMapper(fileRange, inputDir, outputDir string) {
 	for i := start; i <= end; i++ {
 		fileName := fmt.Sprintf("%s-%d", prefix, i)
 
-		file, err := os.Open(inputDir + fileName)
+		file, err := os.Open(cfg.InputDir + fileName)
 		if err != nil {
 			fmt.Println("Error opening file:", err)
 			os.Exit(1)
@@ -171,7 +164,7 @@ func runMapper(fileRange, inputDir, outputDir string) {
 	}
 
 	// Save result to NFS storage
-	file, err := os.Create(outputDir + "output.csv")
+	file, err := os.Create(cfg.OutputDir + "output.csv")
 	if err != nil {
 		log.Printf("Failed to create a file: %v", err)
 		os.Exit(1)
@@ -197,7 +190,7 @@ func runMapper(fileRange, inputDir, outputDir string) {
 	}
 }
 
-func runReducer() {
+func runReducer(cfg *config.Config) {
 	log.Printf("Running reducer...")
 }
 
