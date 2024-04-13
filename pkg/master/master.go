@@ -20,7 +20,7 @@ import (
 	"k8s.io/client-go/util/homedir"
 )
 
-func RunMaster(cfg *config.Config) {
+func Run(cfg *config.Config) {
 	log.Printf("Running master...")
 	clientset := createKubernetesClient()
 	numNodes := getNumberOfNodes(clientset)
