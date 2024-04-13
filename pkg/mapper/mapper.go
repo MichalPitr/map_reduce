@@ -2,22 +2,88 @@ package mapper
 
 import (
 	"bufio"
+	"encoding/csv"
 	"fmt"
 	"log"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/MichalPitr/map_reduce/pkg/config"
+	"github.com/MichalPitr/map_reduce/pkg/interfaces"
 )
+
+// TextInput implements the MapInput interface for simple strings.
+type TextInput struct {
+	data string
+}
+
+func (ti *TextInput) Value() string {
+	return ti.data
+}
+
+var registeredMappers = make(map[string]func() interfaces.Mapper)
+
+func RegisterMapper(cfg *config.Config, name string, factory func() interfaces.Mapper) {
+	registeredMappers[name] = factory
+	cfg.MapperClass = name
+}
+
+func GetMapper(name string) interfaces.Mapper {
+	if factory, exists := registeredMappers[name]; exists {
+		return factory()
+	}
+	log.Fatalf("Mapper not registered: %s", name)
+	return nil
+}
 
 func Run(cfg *config.Config) {
 	log.Printf("Running mapper...")
+	mapper := GetMapper(cfg.MapperClass)
+	processFiles(cfg, mapper)
+}
 
-	substrings := strings.Split(cfg.FileRange, "-")
+func processFiles(cfg *config.Config, mapper interfaces.Mapper) {
+	prefix, start, end := parseFileRange(cfg.FileRange)
+	intermediate := make(map[string][]string)
+
+	// Prepare output dir
+	if err := os.MkdirAll(cfg.OutputDir, 0777); err != nil {
+		log.Printf("Creating directory %s failed: %v", cfg.OutputDir, err)
+		os.Exit(1)
+	}
+
+	emit := func(key, value string) {
+		intermediate[key] = append(intermediate[key], value)
+	}
+
+	for i := start; i <= end; i++ {
+		filePath := fmt.Sprintf("%s/%s-%d", cfg.InputDir, prefix, i)
+		file, err := os.Open(filePath)
+		if err != nil {
+			log.Fatalf("Failed to open file %s: %v", filePath, err)
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			// TODO: generalize for other input types maybe?
+			input := &TextInput{data: scanner.Text()}
+			mapper.Map(input, emit)
+		}
+
+		if err := scanner.Err(); err != nil {
+			log.Fatalf("error reading from file %s: %v", filePath, err)
+		}
+	}
+
+	writeToCSV(cfg.OutputDir, "output.csv", intermediate)
+}
+
+func parseFileRange(fileRange string) (string, int, int) {
+	substrings := strings.Split(fileRange, "-")
 	if len(substrings) != 3 {
-		log.Printf("Expected file range in format prefix-start-end but got %s.", cfg.FileRange)
+		log.Printf("Expected file range in format prefix-start-end but got %s.", fileRange)
 		os.Exit(1)
 	}
 	prefix := substrings[0]
@@ -31,71 +97,37 @@ func Run(cfg *config.Config) {
 		log.Println(err)
 		os.Exit(1)
 	}
+	return prefix, start, end
+}
 
-	// Prepare output dir
-	if err := os.MkdirAll(cfg.OutputDir, 0777); err != nil {
-		log.Printf("Creating directory %s failed: %v", cfg.OutputDir, err)
-		os.Exit(1)
+// writeToCSV takes a map of keys to slices of values and writes them to a CSV file.
+func writeToCSV(outputDir, filename string, data map[string][]string) {
+	// Create the output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		log.Fatalf("Failed to create output directory: %v", err)
 	}
 
-	// Do Mapper operation. This should be the pluggable part defined by user.
-	wordFreq := make(map[string]int)
-	re := regexp.MustCompile(`\b\w+\b`)
-	for i := start; i <= end; i++ {
-		fileName := fmt.Sprintf("%s-%d", prefix, i)
-
-		file, err := os.Open(cfg.InputDir + fileName)
-		if err != nil {
-			fmt.Println("Error opening file:", err)
-			os.Exit(1)
-		}
-		defer file.Close()
-
-		// Create a scanner to read the file
-		scanner := bufio.NewScanner(file)
-
-		// Iterate over each line in the file
-		for scanner.Scan() {
-			// Split the line into words
-			line := scanner.Text()
-			line = strings.ToLower(line)
-			words := re.FindAllString(line, -1)
-			// words := strings.Fields(line)
-
-			// Iterate over each word
-			for _, word := range words {
-				wordFreq[word]++
-			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			fmt.Println("Error reading from file:", err)
-		}
-	}
-
-	// Save result to NFS storage
-	file, err := os.Create(cfg.OutputDir + "output.csv")
+	// Open a file for writing
+	filePath := outputDir + "/" + filename
+	file, err := os.Create(filePath)
 	if err != nil {
-		log.Printf("Failed to create a file: %v", err)
-		os.Exit(1)
+		log.Fatalf("Failed to create file: %v", err)
 	}
 	defer file.Close()
 
-	// Create a buffered writer
-	writer := bufio.NewWriter(file)
+	// Create a CSV writer
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
 
-	// Iterate over the map and write to file
-	for key, value := range wordFreq {
-		line := fmt.Sprintf("%s,%d\n", key, value)
-		if _, err := writer.WriteString(line); err != nil {
-			log.Printf("Failed to create a file: %v", err)
-			os.Exit(1)
+	// Iterate over the data and write to the CSV file
+	for key, values := range data {
+		for _, value := range values {
+			record := []string{key, value}
+			if err := writer.Write(record); err != nil {
+				log.Fatalf("Failed to write record to CSV: %v", err)
+			}
 		}
 	}
 
-	// Flush any buffered data
-	if err := writer.Flush(); err != nil {
-		log.Printf("Failed to create a file: %v", err)
-		os.Exit(1)
-	}
+	log.Printf("Data successfully written to %s", filePath)
 }

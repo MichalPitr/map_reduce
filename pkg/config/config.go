@@ -3,10 +3,12 @@ package config
 import "flag"
 
 type Config struct {
-	Mode      string
-	InputDir  string
-	OutputDir string
-	FileRange string
+	Mode         string
+	InputDir     string
+	OutputDir    string
+	FileRange    string
+	MapperClass  string
+	ReducerClass string
 }
 
 func ParseFlags() *Config {
