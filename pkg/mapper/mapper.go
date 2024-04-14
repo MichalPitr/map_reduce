@@ -80,7 +80,7 @@ func processFiles(cfg *config.Config, mapper interfaces.Mapper) {
 		}
 	}
 
-	flushData(cfg.OutputDir, cfg.NumMachines, intermediate)
+	flushData(cfg.OutputDir, cfg.NumReducers, intermediate)
 }
 
 func parseFileRange(fileRange string) (string, int, int) {
@@ -103,9 +103,9 @@ func parseFileRange(fileRange string) (string, int, int) {
 	return prefix, start, end
 }
 
-func flushData(outputDir string, numMachines int, intermediate map[string][]string) {
+func flushData(outputDir string, numPartitions int, intermediate map[string][]string) {
 	for key, values := range intermediate {
-		partition := getKeyPartition(key, numMachines)
+		partition := getKeyPartition(key, numPartitions)
 		fileName := fmt.Sprintf("%s/partition-%d", outputDir, partition)
 		writeToFile(fileName, key, values)
 	}
