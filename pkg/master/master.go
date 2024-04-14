@@ -27,22 +27,25 @@ func Run(cfg *config.Config) {
 	if numNodes == 0 {
 		log.Printf("Need at least 1 node in the cluster.")
 		os.Exit(1)
+	} else if numNodes < cfg.NumMappers || numNodes < cfg.NumReducers {
+		log.Printf("More mappers or reducers than available nodes.")
 	}
-	jobName := fmt.Sprintf("job-%s", time.Now().Format("2006-01-02-15-04-05"))
+	jobId := fmt.Sprintf("job-%s", time.Now().Format("2006-01-02-15-04-05"))
 
 	// Host nfs mount.
-	err := os.Mkdir("/mnt/"+jobName, 0777)
+	err := os.Mkdir("/mnt/"+jobId, 0777)
 	if err != nil {
 		log.Printf("Error creating job folder: %v", err)
 		os.Exit(1)
 	}
 
-	fileRanges := partitionInputFiles(cfg.InputDir, numNodes)
+	// Number of partitions has to match number of reducers.
+	fileRanges := partitionInputFiles(cfg.InputDir, cfg.NumReducers)
 	fmt.Println(fileRanges)
 
 	startTime := time.Now()
-	lunchJobs(clientset, jobName, numNodes, fileRanges)
-	waitForJobsToComplete(clientset, jobName)
+	launchMappers(clientset, jobId, cfg.NumMappers, fileRanges)
+	waitForJobsToComplete(clientset, jobId)
 	log.Printf("Mappers took %v to finish", time.Since(startTime))
 }
 
@@ -114,12 +117,12 @@ func getNumberOfNodes(clientset *kubernetes.Clientset) int {
 	return len(nodes.Items)
 }
 
-func lunchJobs(clientset *kubernetes.Clientset, jobName string, numJobs int, fileRanges []string) {
+func launchMappers(clientset *kubernetes.Clientset, jobId string, numJobs int, fileRanges []string) {
 	for i := 0; i < numJobs; i++ {
-		jobId := fmt.Sprintf("%s-job-%d", jobName, i+1)
+		mapperId := fmt.Sprintf("mapper-%d", i+1)
 		_ = clientset
-		fmt.Printf("Creating mapper %s for %s\n", jobId, fileRanges[i])
-		job := createMapperJobSpec(jobName, jobId, fileRanges[i])
+		fmt.Printf("Creating mapper %s for %s\n", mapperId, fileRanges[i])
+		job := createMapperJobSpec(jobId, mapperId, fileRanges[i])
 		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})
 		if err != nil {
 			log.Printf("Failed to create a job: %v", err)
@@ -157,16 +160,61 @@ func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName string) {
 	}
 }
 
-func createMapperJobSpec(jobName, jobId, fileRange string) *batchv1.Job {
+func createMapperJobSpec(jobName, mapperId, fileRange string) *batchv1.Job {
 	nfsBaseDir := "/mnt/nfs/"
 	inputDir := nfsBaseDir + "input/"
-	outputDir := nfsBaseDir + jobName + "/" + jobId + "/"
+	outputDir := nfsBaseDir + jobName + "/" + mapperId + "/"
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobId,
+			Name:      mapperId,
 			Namespace: "default",
 			Labels: map[string]string{
 				"job-group": jobName,
+			},
+		},
+		Spec: batchv1.JobSpec{
+			Template: v1.PodTemplateSpec{
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:    "worker",
+							Image:   "michalpitr/mapreduce:latest",
+							Command: []string{"./mapreduce", "--mode", "mapper", "--input-dir", inputDir, "--output-dir", outputDir, "--file-range", fileRange},
+							VolumeMounts: []v1.VolumeMount{
+								{
+									Name:      "nfs-storage",
+									MountPath: "/mnt/nfs",
+								},
+							},
+						},
+					},
+					Volumes: []v1.Volume{
+						{
+							Name: "nfs-storage",
+							VolumeSource: v1.VolumeSource{
+								PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "nfs-pvc",
+								},
+							},
+						},
+					},
+					RestartPolicy: v1.RestartPolicyNever,
+				},
+			},
+		},
+	}
+}
+
+func createReducerJobSpec(jobId, reducerId, fileRange string) *batchv1.Job {
+	nfsBaseDir := "/mnt/nfs/"
+	inputDir := nfsBaseDir + "/" + jobId + "/"
+	outputDir := nfsBaseDir + jobId + "/" + reducerId + "/"
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      reducerId,
+			Namespace: "default",
+			Labels: map[string]string{
+				"job-group": jobId,
 			},
 		},
 		Spec: batchv1.JobSpec{

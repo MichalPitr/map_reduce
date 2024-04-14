@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -104,10 +105,17 @@ func parseFileRange(fileRange string) (string, int, int) {
 }
 
 func flushData(outputDir string, numPartitions int, intermediate map[string][]string) {
-	for key, values := range intermediate {
+	// Sort keys to write in alphabetic order.
+	keys := make([]string, 0, len(intermediate))
+	for key := range intermediate {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
 		partition := getKeyPartition(key, numPartitions)
 		fileName := fmt.Sprintf("%s/partition-%d", outputDir, partition)
-		writeToFile(fileName, key, values)
+		writeToFile(fileName, key, intermediate[key])
 	}
 }
 

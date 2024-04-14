@@ -5,20 +5,16 @@ type Mapper interface {
 }
 
 type Reducer interface {
-	Reduce(input ReduceInput, emit func(int)) []KeyValue
+	Reduce(input ReducerInput, emit func(string))
 }
 
 type MapInput interface {
 	Value() string
 }
 
-type ReduceInput interface {
+type ReducerInput interface {
 	Key() string
-	NextValue() string
+	Value() string
+	NextValue()
 	Done() bool
-}
-
-type KeyValue struct {
-	Key   string
-	Value string
 }
