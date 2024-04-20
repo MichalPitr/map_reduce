@@ -105,10 +105,13 @@ func flushData(outputDir string, numPartitions int, intermediate map[string][]st
 		if err != nil {
 			log.Fatalf("Failed to open file %s: %v", fileName, err)
 		}
+		defer file.Close()
 		writer := bufio.NewWriter(file)
+		defer writer.Flush()
 		writers = append(writers, writer)
 	}
 
+	// Write to files
 	for _, key := range keys {
 		p := getKeyPartition(key, numPartitions)
 		writeToFile(writers[p], key, intermediate[key])

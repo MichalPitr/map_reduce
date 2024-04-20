@@ -44,7 +44,7 @@ func Run(cfg *config.Config) {
 	fmt.Println(fileRanges)
 
 	startTime := time.Now()
-	launchMappers(clientset, jobId, cfg.NumMappers, fileRanges)
+	launchMappers(cfg, clientset, jobId, fileRanges)
 	waitForJobsToComplete(clientset, jobId)
 	log.Printf("Mappers took %v to finish", time.Since(startTime))
 }
@@ -117,12 +117,12 @@ func getNumberOfNodes(clientset *kubernetes.Clientset) int {
 	return len(nodes.Items)
 }
 
-func launchMappers(clientset *kubernetes.Clientset, jobId string, numJobs int, fileRanges []string) {
-	for i := 0; i < numJobs; i++ {
+func launchMappers(cfg *config.Config, clientset *kubernetes.Clientset, jobId string, fileRanges []string) {
+	for i := 0; i < cfg.NumMappers; i++ {
 		mapperId := fmt.Sprintf("mapper-%d", i+1)
 		_ = clientset
 		fmt.Printf("Creating mapper %s for %s\n", mapperId, fileRanges[i])
-		job := createMapperJobSpec(jobId, mapperId, fileRanges[i])
+		job := createMapperJobSpec(cfg, jobId, mapperId, fileRanges[i])
 		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})
 		if err != nil {
 			log.Printf("Failed to create a job: %v", err)
@@ -160,10 +160,9 @@ func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName string) {
 	}
 }
 
-func createMapperJobSpec(jobName, mapperId, fileRange string) *batchv1.Job {
-	nfsBaseDir := "/mnt/nfs/"
-	inputDir := nfsBaseDir + "input/"
-	outputDir := nfsBaseDir + jobName + "/" + mapperId + "/"
+func createMapperJobSpec(cfg *config.Config, jobName, mapperId, fileRange string) *batchv1.Job {
+	inputDir := cfg.NfsPath + "/input/"
+	outputDir := cfg.NfsPath + "/" + jobName + "/" + mapperId + "/"
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mapperId,
@@ -183,7 +182,7 @@ func createMapperJobSpec(jobName, mapperId, fileRange string) *batchv1.Job {
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "nfs-storage",
-									MountPath: "/mnt/nfs",
+									MountPath: cfg.NfsPath,
 								},
 							},
 						},
@@ -205,10 +204,9 @@ func createMapperJobSpec(jobName, mapperId, fileRange string) *batchv1.Job {
 	}
 }
 
-func createReducerJobSpec(jobId, reducerId, fileRange string) *batchv1.Job {
-	nfsBaseDir := "/mnt/nfs/"
-	inputDir := nfsBaseDir + "/" + jobId + "/"
-	outputDir := nfsBaseDir + jobId + "/" + reducerId + "/"
+func createReducerJobSpec(cfg *config.Config, jobId, reducerId, fileRange string) *batchv1.Job {
+	inputDir := cfg.NfsPath + "/" + jobId + "/"
+	outputDir := cfg.NfsPath + jobId + "/" + reducerId + "/"
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      reducerId,

@@ -40,8 +40,9 @@ func Run(cfg *config.Config) {
 		}
 
 		reducer.Reduce(sm, emit)
-		fmt.Printf("%s: %s\n", key, results[key])
 		// reset so that we can process the next key
 		sm.done = false
 	}
+
+	//TODO: Save results to disk, probably to job-id/reducer-{id} file.
 }

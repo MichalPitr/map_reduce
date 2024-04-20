@@ -31,7 +31,7 @@ func (a *Adder) Reduce(input interfaces.ReducerInput, emit func(value string)) {
 	for !input.Done() {
 		num, err := strconv.Atoi(input.Value())
 		if err != nil {
-			log.Printf("Failed converting input to integer, skipping: %s", input.Value())
+			log.Printf("Failed converting input to integer, skipping: %q", input.Value())
 			input.NextValue()
 			continue
 		}
