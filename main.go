@@ -11,14 +11,14 @@ import (
 	"github.com/MichalPitr/map_reduce/pkg/mapreduce"
 )
 
-type WordCounter struct{}
+type WordCounter struct {
+	wordRegex *regexp.Regexp
+}
 
 func (wc *WordCounter) Map(input interfaces.MapInput, emit func(key, value string)) {
 	text := input.Value()
-	wordRegex := regexp.MustCompile(`\b\w+\b`)
-
 	text = strings.ToLower(text)
-	words := wordRegex.FindAllString(text, -1)
+	words := wc.wordRegex.FindAllString(text, -1)
 	for _, word := range words {
 		emit(word, "1")
 	}
@@ -31,7 +31,7 @@ func (a *Adder) Reduce(input interfaces.ReducerInput, emit func(value string)) {
 	for !input.Done() {
 		num, err := strconv.Atoi(input.Value())
 		if err != nil {
-			log.Printf("Failed converting input to integer, skipping: %v", input.Value())
+			log.Printf("Failed converting input to integer, skipping: %s", input.Value())
 			input.NextValue()
 			continue
 		}
@@ -47,7 +47,7 @@ func main() {
 	cfg.NumReducers = 2
 	cfg.NumMappers = 2
 
-	cfg.Mapper = &WordCounter{}
+	cfg.Mapper = &WordCounter{wordRegex: regexp.MustCompile(`\b\w+\b`)}
 	cfg.Reducer = &Adder{}
 
 	mapreduce.Execute(cfg)

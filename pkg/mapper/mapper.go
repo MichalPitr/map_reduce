@@ -97,26 +97,29 @@ func flushData(outputDir string, numPartitions int, intermediate map[string][]st
 	}
 	sort.Strings(keys)
 
+	// Prepare output files
+	writers := make([]*bufio.Writer, 0, numPartitions)
+	for p := range numPartitions {
+		fileName := fmt.Sprintf("%s/partition-%d", outputDir, p)
+		file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatalf("Failed to open file %s: %v", fileName, err)
+		}
+		writer := bufio.NewWriter(file)
+		writers = append(writers, writer)
+	}
+
 	for _, key := range keys {
-		partition := getKeyPartition(key, numPartitions)
-		fileName := fmt.Sprintf("%s/partition-%d", outputDir, partition)
-		writeToFile(fileName, key, intermediate[key])
+		p := getKeyPartition(key, numPartitions)
+		writeToFile(writers[p], key, intermediate[key])
 	}
 }
 
-func writeToFile(fileName, key string, values []string) {
-	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open file %s: %v", fileName, err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
+func writeToFile(writer *bufio.Writer, key string, values []string) {
 	for _, value := range values {
-		_, err = writer.WriteString(fmt.Sprintf("%s,%s\n", key, value))
+		_, err := writer.WriteString(fmt.Sprintf("%s,%s\n", key, value))
 		if err != nil {
-			log.Fatalf("Failed to write to file %s: %v", fileName, err)
+			log.Fatalf("Failed to write to file: %v", err)
 		}
 	}
 }
