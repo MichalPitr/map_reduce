@@ -26,24 +26,9 @@ func (ti *TextInput) Value() string {
 	return ti.data
 }
 
-var registeredMappers = make(map[string]func() interfaces.Mapper)
-
-func RegisterMapper(cfg *config.Config, name string, factory func() interfaces.Mapper) {
-	registeredMappers[name] = factory
-	cfg.MapperClass = name
-}
-
-func GetMapper(name string) interfaces.Mapper {
-	if factory, exists := registeredMappers[name]; exists {
-		return factory()
-	}
-	log.Fatalf("Mapper not registered: %s", name)
-	return nil
-}
-
 func Run(cfg *config.Config) {
 	log.Printf("Running mapper...")
-	mapper := GetMapper(cfg.MapperClass)
+	mapper := cfg.Mapper
 	processFiles(cfg, mapper)
 }
 

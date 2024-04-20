@@ -1,2 +1,16 @@
 # Map Reduce
 
+Usage
+
+Call mapper locally:
+
+```
+go run main.go --mode=mapper --input-dir /mnt/input --output-dir /mnt/job-test/ --file-range book-0-40
+```
+
+Call Reducer locally:
+
+```
+go run main.go --mode=reducer --reducer-id <id> --job-id <job-id> --nfs-path <nfs-mount-folder>
+```
+

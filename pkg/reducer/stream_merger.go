@@ -34,17 +34,24 @@ func (pq *PriorityQueue) Pop() interface{} {
 	return item
 }
 
+func (pq PriorityQueue) Peek() *Item {
+	if len(pq) > 0 {
+		return pq[0]
+	}
+	return nil
+}
+
 // StreamMerger manages merging of sorted key-value pairs from multiple files.
 type StreamMerger struct {
 	readers []*bufio.Scanner
 	pq      PriorityQueue
+	done    bool
 }
 
-// NewStreamMerger initializes a StreamMerger with the given list of file names.
 func NewStreamMerger(files []string) *StreamMerger {
 	sm := &StreamMerger{
 		readers: make([]*bufio.Scanner, len(files)),
-		pq:      make(PriorityQueue, 0, len(files)),
+		pq:      make(PriorityQueue, 0),
 	}
 	heap.Init(&sm.pq)
 	for i, file := range files {
@@ -53,45 +60,51 @@ func NewStreamMerger(files []string) *StreamMerger {
 			fmt.Printf("Error opening file %s: %v\n", file, err)
 			continue
 		}
-		sm.readers[i] = bufio.NewScanner(f)
-		if sm.readers[i].Scan() {
-			parts := strings.SplitN(sm.readers[i].Text(), ",", 2)
+		reader := bufio.NewScanner(f)
+		sm.readers[i] = reader
+		if reader.Scan() {
+			parts := strings.SplitN(reader.Text(), ",", 2)
 			heap.Push(&sm.pq, &Item{key: parts[0], value: parts[1], index: i})
 		}
 	}
 	return sm
 }
 
-// Merge outputs the merged stream of key-value pairs to the CLI.
-func (sm *StreamMerger) Merge() {
-	var currentKey string
-	var buffer []string
+func (sm *StreamMerger) Key() string {
+	item := sm.pq.Peek()
+	if item == nil {
+		return ""
+	}
+	return item.key
+}
 
-	for sm.pq.Len() > 0 {
-		minItem := heap.Pop(&sm.pq).(*Item)
+func (sm *StreamMerger) Value() string {
+	item := sm.pq.Peek()
+	if item == nil {
+		return ""
+	}
+	return item.value
+}
 
-		// Check if we need to output the current buffer
-		if minItem.key != currentKey && currentKey != "" {
-			// TODO: instead pass it to user's reducer
-			fmt.Printf("%s: %v\n", currentKey, buffer)
-			buffer = buffer[:0]
-		}
+func (sm *StreamMerger) NextValue() {
+	if sm.pq.Len() == 0 {
+		return
+	}
+	item := heap.Pop(&sm.pq).(*Item)
 
-		// Update the current key and append the new value to the buffer
-		currentKey = minItem.key
-		buffer = append(buffer, minItem.value)
-
-		// Get the next item from the same file
-		if sm.readers[minItem.index].Scan() {
-			parts := strings.SplitN(sm.readers[minItem.index].Text(), ",", 2)
-			if len(parts) == 2 {
-				heap.Push(&sm.pq, &Item{key: parts[0], value: parts[1], index: minItem.index})
-			}
+	// Read new key-value pair from the file that was just popped
+	if sm.readers[item.index].Scan() {
+		parts := strings.SplitN(sm.readers[item.index].Text(), ",", 2)
+		if len(parts) == 2 {
+			heap.Push(&sm.pq, &Item{key: parts[0], value: parts[1], index: item.index})
 		}
 	}
 
-	// Output any remaining items in the buffer
-	if len(buffer) > 0 {
-		fmt.Printf("%s: %v\n", currentKey, buffer)
+	if sm.pq.Len() > 0 && sm.pq.Peek().key != item.key {
+		sm.done = true
 	}
+}
+
+func (sm *StreamMerger) Done() bool {
+	return sm.done || sm.pq.Len() == 0
 }

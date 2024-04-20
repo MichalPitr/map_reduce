@@ -1,22 +1,27 @@
 package config
 
-import "flag"
+import (
+	"flag"
+
+	"github.com/MichalPitr/map_reduce/pkg/interfaces"
+)
 
 type Config struct {
-	Mode         string
-	InputDir     string
-	OutputDir    string
-	FileRange    string
-	MapperClass  string
-	ReducerClass string
-	NumReducers  int
-	NumMappers   int
-	JobId        string
-	ReducerId    int
-	NfsPath      string
+	Mode        string
+	InputDir    string
+	OutputDir   string
+	FileRange   string
+	NumReducers int
+	NumMappers  int
+	JobId       string
+	ReducerId   int
+	NfsPath     string
+
+	Mapper  interfaces.Mapper
+	Reducer interfaces.Reducer
 }
 
-func ParseFlags() *Config {
+func SetupJobConfig() *Config {
 	cfg := &Config{}
 	// Common flags
 	flag.StringVar(&cfg.Mode, "mode", "", "Mode of operation: master, mapper, reducer.")

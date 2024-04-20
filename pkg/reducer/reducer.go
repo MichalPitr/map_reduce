@@ -6,24 +6,7 @@ import (
 	"os"
 
 	"github.com/MichalPitr/map_reduce/pkg/config"
-	"github.com/MichalPitr/map_reduce/pkg/interfaces"
 )
-
-var registeredReducers = make(map[string]func() interfaces.Reducer)
-
-func RegisterReducer(cfg *config.Config, name string, factory func() interfaces.Reducer) {
-	registeredReducers[name] = factory
-	cfg.ReducerClass = name
-}
-
-func GetReducer(name string) interfaces.Reducer {
-	if factory, exists := registeredReducers[name]; exists {
-		return factory()
-	}
-
-	log.Fatalf("Reducer not registered: %s", name)
-	return nil
-}
 
 func Run(cfg *config.Config) {
 	log.Printf("Running reducer...")
@@ -45,9 +28,20 @@ func Run(cfg *config.Config) {
 		partitionFiles = append(partitionFiles, partition)
 	}
 
+	results := make(map[string][]string)
+	reducer := cfg.Reducer
+
 	// Start reading partitions and on-the-fly merge.
 	sm := NewStreamMerger(partitionFiles)
+	for sm.pq.Len() > 0 {
+		key := sm.Key()
+		emit := func(value string) {
+			results[key] = append(results[key], value)
+		}
 
-	// TODO: Pass key-value pairs to user's reducer.
-	sm.Merge()
+		reducer.Reduce(sm, emit)
+		fmt.Printf("%s: %s\n", key, results[key])
+		// reset so that we can process the next key
+		sm.done = false
+	}
 }
