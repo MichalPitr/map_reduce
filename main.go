@@ -45,7 +45,7 @@ func main() {
 	cfg := config.SetupJobConfig()
 	log.Printf("cfg: %v", cfg)
 	cfg.NumReducers = 2
-	cfg.NumMappers = 2
+	cfg.NumMappers = 4
 
 	cfg.Mapper = &WordCounter{wordRegex: regexp.MustCompile(`\b\w+\b`)}
 	cfg.Reducer = &Adder{}

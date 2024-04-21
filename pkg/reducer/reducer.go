@@ -1,6 +1,7 @@
 package reducer
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
@@ -10,21 +11,18 @@ import (
 
 func Run(cfg *config.Config) {
 	log.Printf("Running reducer...")
-
-	// Get slice of input files
-	basePath := fmt.Sprintf("%s/%s/", cfg.NfsPath, cfg.JobId)
-	log.Printf("base path: %s", basePath)
+	log.Printf("Reducer input dir: %s", cfg.InputDir)
 	partitionFiles := make([]string, 0, cfg.NumReducers)
-	inputFiles, err := os.ReadDir(basePath)
+	inputFiles, err := os.ReadDir(cfg.InputDir)
 	if err != nil {
-		log.Fatalf("Failed to read dir %s: %v", basePath, err)
+		log.Fatalf("Failed to read dir %s: %v", cfg.InputDir, err)
 	}
 
 	for _, file := range inputFiles {
 		if !file.IsDir() {
 			continue
 		}
-		partition := fmt.Sprintf("%s/%s/partition-%d", basePath, file.Name(), cfg.ReducerId)
+		partition := fmt.Sprintf("%s/%s/partition-%d", cfg.InputDir, file.Name(), cfg.ReducerId)
 		partitionFiles = append(partitionFiles, partition)
 	}
 
@@ -44,5 +42,24 @@ func Run(cfg *config.Config) {
 		sm.done = false
 	}
 
-	//TODO: Save results to disk, probably to job-id/reducer-{id} file.
+	// Prepare output dir
+	if err := os.MkdirAll(cfg.OutputDir, 0777); err != nil {
+		log.Fatalf("Creating directory %s failed: %v", cfg.OutputDir, err)
+	}
+
+	//Save results to disk, probably to job-id/out/reducer-{id} file.
+	outputFilePath := fmt.Sprintf("%s/reducer-%d", cfg.OutputDir, cfg.ReducerId)
+	file, err := os.OpenFile(outputFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+	for key, values := range results {
+		_, err := writer.WriteString(fmt.Sprintf("%s,%s\n", key, values[0]))
+		if err != nil {
+			log.Fatalf("Failed to write to a file: %v", err)
+		}
+	}
 }

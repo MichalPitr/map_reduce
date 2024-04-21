@@ -12,9 +12,9 @@ import (
 func BenchmarkReducer(b *testing.B) {
 	cfg := NewTestConfig()
 	cfg.ReducerId = 1
-	cfg.JobId = "job-2024-04-21-01-07-50"
 	cfg.Reducer = &Adder{}
-	cfg.NfsPath = "/mnt/"
+	cfg.InputDir = "/home/michal/code/map_reduce/nfs/nfs-storage/job-2024-04-21-01-07-50/"
+	cfg.OutputDir = "/home/michal/code/map_reduce/nfs/nfs-storage/job-2024-04-21-01-07-50/out/"
 
 	// Determines the number of partitions
 	Run(cfg)

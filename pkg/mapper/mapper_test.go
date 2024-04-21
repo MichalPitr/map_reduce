@@ -11,6 +11,8 @@ import (
 
 func BenchmarkMapper(b *testing.B) {
 	cfg := NewTestConfig()
+	cfg.InputDir = "/mnt/input/"
+	cfg.OutputDir = "/mnt/benchmark/"
 	cfg.FileRange = "book-0-80"
 	cfg.Mapper = &WordCounter{wordRegex: regexp.MustCompile(`\b\w+\b`)}
 
@@ -34,7 +36,5 @@ func (wc *WordCounter) Map(input interfaces.MapInput, emit func(key, value strin
 
 func NewTestConfig() *config.Config {
 	cfg := config.Config{}
-	cfg.InputDir = "/mnt/input/"
-	cfg.OutputDir = "/mnt/benchmark/"
 	return &cfg
 }

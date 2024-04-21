@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,13 +41,18 @@ func Run(cfg *config.Config) {
 	}
 
 	// Number of partitions has to match number of reducers.
-	fileRanges := partitionInputFiles(cfg.InputDir, cfg.NumReducers)
+	fileRanges := partitionInputFiles(cfg.InputDir, cfg.NumMappers)
 	fmt.Println(fileRanges)
 
-	startTime := time.Now()
+	t0 := time.Now()
 	launchMappers(cfg, clientset, jobId, fileRanges)
-	waitForJobsToComplete(clientset, jobId)
-	log.Printf("Mappers took %v to finish", time.Since(startTime))
+	waitForJobsToComplete(clientset, jobId, "mapper")
+	log.Printf("Mappers took %v to finish", time.Since(t0))
+
+	t0 = time.Now()
+	launchReducers(cfg, clientset, jobId)
+	waitForJobsToComplete(clientset, jobId, "reducer")
+	log.Printf("Reducers took %v to finish", time.Since(t0))
 }
 
 func partitionInputFiles(inputDir string, partitions int) []string {
@@ -119,7 +125,7 @@ func getNumberOfNodes(clientset *kubernetes.Clientset) int {
 
 func launchMappers(cfg *config.Config, clientset *kubernetes.Clientset, jobId string, fileRanges []string) {
 	for i := 0; i < cfg.NumMappers; i++ {
-		mapperId := fmt.Sprintf("mapper-%d", i+1)
+		mapperId := fmt.Sprintf("mapper-%d", i)
 		_ = clientset
 		fmt.Printf("Creating mapper %s for %s\n", mapperId, fileRanges[i])
 		job := createMapperJobSpec(cfg, jobId, mapperId, fileRanges[i])
@@ -131,8 +137,8 @@ func launchMappers(cfg *config.Config, clientset *kubernetes.Clientset, jobId st
 	}
 }
 
-func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName string) {
-	labelSelector := fmt.Sprintf("job-group=%s", jobName)
+func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName, suffix string) {
+	labelSelector := fmt.Sprintf("job-group=%s-%s", jobName, suffix)
 	for {
 		jobs, err := clientset.BatchV1().Jobs("default").List(context.TODO(), metav1.ListOptions{
 			LabelSelector: labelSelector,
@@ -160,15 +166,15 @@ func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName string) {
 	}
 }
 
-func createMapperJobSpec(cfg *config.Config, jobName, mapperId, fileRange string) *batchv1.Job {
+func createMapperJobSpec(cfg *config.Config, jobId, mapperId, fileRange string) *batchv1.Job {
 	inputDir := cfg.NfsPath + "/input/"
-	outputDir := cfg.NfsPath + "/" + jobName + "/" + mapperId + "/"
+	outputDir := cfg.NfsPath + "/" + jobId + "/" + mapperId + "/"
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mapperId,
 			Namespace: "default",
 			Labels: map[string]string{
-				"job-group": jobName,
+				"job-group": jobId + "-mapper",
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -204,15 +210,27 @@ func createMapperJobSpec(cfg *config.Config, jobName, mapperId, fileRange string
 	}
 }
 
-func createReducerJobSpec(cfg *config.Config, jobId, reducerId, fileRange string) *batchv1.Job {
+func launchReducers(cfg *config.Config, clientset *kubernetes.Clientset, jobId string) {
+	for i := 0; i < cfg.NumReducers; i++ {
+		_ = clientset
+		job := createReducerJobSpec(cfg, jobId, i)
+		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})
+		if err != nil {
+			log.Fatalf("Failed to create a job: %v", err)
+		}
+	}
+}
+
+func createReducerJobSpec(cfg *config.Config, jobId string, reducerId int) *batchv1.Job {
+	reducerName := fmt.Sprintf("reducer-%d", reducerId)
 	inputDir := cfg.NfsPath + "/" + jobId + "/"
-	outputDir := cfg.NfsPath + jobId + "/" + reducerId + "/"
+	outputDir := cfg.NfsPath + "/" + jobId + "/out/"
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      reducerId,
+			Name:      reducerName,
 			Namespace: "default",
 			Labels: map[string]string{
-				"job-group": jobId,
+				"job-group": jobId + "-reducer",
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -222,11 +240,11 @@ func createReducerJobSpec(cfg *config.Config, jobId, reducerId, fileRange string
 						{
 							Name:    "worker",
 							Image:   "michalpitr/mapreduce:latest",
-							Command: []string{"./mapreduce", "--mode", "mapper", "--input-dir", inputDir, "--output-dir", outputDir, "--file-range", fileRange},
+							Command: []string{"./mapreduce", "--mode", "reducer", "--input-dir", inputDir, "--output-dir", outputDir, "--reducer-id", strconv.Itoa(reducerId)},
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "nfs-storage",
-									MountPath: "/mnt/nfs",
+									MountPath: cfg.NfsPath,
 								},
 							},
 						},

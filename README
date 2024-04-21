@@ -1,6 +1,17 @@
 # Map Reduce
 
-Usage
+## Usage
+
+Run master:
+
+first build and push docker image. Mapper and Reducer jobs rely on pulling this image from container registry.
+```
+sh build_image.sh
+```
+then,
+```
+run main.go --mode=master --input-dir /mnt/input/ --nfs-path /mnt/nfs/
+```
 
 Call mapper locally:
 
