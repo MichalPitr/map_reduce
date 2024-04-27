@@ -25,34 +25,39 @@ func Run(cfg *config.Config) {
 	log.Printf("Running master...")
 	clientset := createKubernetesClient()
 	numNodes := getNumberOfNodes(clientset)
-	if numNodes == 0 {
-		log.Printf("Need at least 1 node in the cluster.")
-		os.Exit(1)
-	} else if numNodes < cfg.NumMappers || numNodes < cfg.NumReducers {
-		log.Printf("More mappers or reducers than available nodes.")
-	}
+	mustValidateNodeConfig(cfg, numNodes)
+
 	jobId := fmt.Sprintf("job-%s", time.Now().Format("2006-01-02-15-04-05"))
+	mustCreateJobDir(cfg.NfsPath, jobId)
 
-	// Host nfs mount.
-	err := os.Mkdir("/mnt/"+jobId, 0777)
-	if err != nil {
-		log.Printf("Error creating job folder: %v", err)
-		os.Exit(1)
-	}
-
-	// Number of partitions has to match number of reducers.
 	fileRanges := partitionInputFiles(cfg.InputDir, cfg.NumMappers)
-	fmt.Println(fileRanges)
 
 	t0 := time.Now()
 	launchMappers(cfg, clientset, jobId, fileRanges)
 	waitForJobsToComplete(clientset, jobId, "mapper")
 	log.Printf("Mappers took %v to finish", time.Since(t0))
 
-	t0 = time.Now()
+	t1 := time.Now()
 	launchReducers(cfg, clientset, jobId)
 	waitForJobsToComplete(clientset, jobId, "reducer")
-	log.Printf("Reducers took %v to finish", time.Since(t0))
+	log.Printf("Reducers took %v to finish", time.Since(t1))
+	log.Printf("Total runtime: %v", time.Since(t0))
+}
+
+func mustCreateJobDir(path string, jobId string) {
+	jobDir := filepath.Join(path, jobId)
+	err := os.Mkdir(jobDir, 0777)
+	if err != nil {
+		log.Fatalf("Error creating job directory: %v", err)
+	}
+}
+
+func mustValidateNodeConfig(cfg *config.Config, numNodes int) {
+	if numNodes == 0 {
+		log.Fatal("Need at least 1 node in the cluster.")
+	} else if numNodes < cfg.NumMappers || numNodes < cfg.NumReducers {
+		log.Fatal("More mappers or reducers than available nodes.")
+	}
 }
 
 func partitionInputFiles(inputDir string, partitions int) []string {
@@ -167,8 +172,7 @@ func waitForJobsToComplete(clientset *kubernetes.Clientset, jobName, suffix stri
 }
 
 func createMapperJobSpec(cfg *config.Config, jobId, mapperId, fileRange string) *batchv1.Job {
-	inputDir := cfg.NfsPath + "/input/"
-	outputDir := cfg.NfsPath + "/" + jobId + "/" + mapperId + "/"
+	outputDir := filepath.Join(cfg.NfsPath, jobId, mapperId)
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mapperId,
@@ -184,7 +188,7 @@ func createMapperJobSpec(cfg *config.Config, jobId, mapperId, fileRange string) 
 						{
 							Name:    "worker",
 							Image:   "michalpitr/mapreduce:latest",
-							Command: []string{"./mapreduce", "--mode", "mapper", "--input-dir", inputDir, "--output-dir", outputDir, "--file-range", fileRange},
+							Command: []string{"./mapreduce", "--mode", "mapper", "--input-dir", cfg.InputDir, "--output-dir", outputDir, "--file-range", fileRange},
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "nfs-storage",
@@ -223,8 +227,8 @@ func launchReducers(cfg *config.Config, clientset *kubernetes.Clientset, jobId s
 
 func createReducerJobSpec(cfg *config.Config, jobId string, reducerId int) *batchv1.Job {
 	reducerName := fmt.Sprintf("reducer-%d", reducerId)
-	inputDir := cfg.NfsPath + "/" + jobId + "/"
-	outputDir := cfg.NfsPath + "/" + jobId + "/out/"
+	inputDir := filepath.Join(cfg.NfsPath, jobId)
+	outputDir := filepath.Join(cfg.NfsPath, jobId)
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      reducerName,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/MichalPitr/map_reduce/pkg/config"
 )
@@ -22,7 +23,9 @@ func Run(cfg *config.Config) {
 		if !file.IsDir() {
 			continue
 		}
-		partition := fmt.Sprintf("%s/%s/partition-%d", cfg.InputDir, file.Name(), cfg.ReducerId)
+		partitionName := fmt.Sprintf("partition-%d", cfg.ReducerId)
+
+		partition := filepath.Join(cfg.InputDir, file.Name(), partitionName)
 		partitionFiles = append(partitionFiles, partition)
 	}
 
@@ -48,7 +51,8 @@ func Run(cfg *config.Config) {
 	}
 
 	//Save results to disk, probably to job-id/out/reducer-{id} file.
-	outputFilePath := fmt.Sprintf("%s/reducer-%d", cfg.OutputDir, cfg.ReducerId)
+
+	outputFilePath := filepath.Join(cfg.OutputDir, fmt.Sprintf("reducer-%d", cfg.ReducerId))
 	file, err := os.OpenFile(outputFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)

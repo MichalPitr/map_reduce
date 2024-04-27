@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,7 +48,8 @@ func processFiles(cfg *config.Config, mapper interfaces.Mapper) {
 	}
 
 	for i := start; i <= end; i++ {
-		filePath := fmt.Sprintf("%s/%s-%d", cfg.InputDir, prefix, i)
+		fName := fmt.Sprintf("%s-%d", prefix, i)
+		filePath := filepath.Join(cfg.InputDir, fName)
 		file, err := os.Open(filePath)
 		if err != nil {
 			log.Fatalf("Failed to open file %s: %v", filePath, err)
@@ -56,7 +58,7 @@ func processFiles(cfg *config.Config, mapper interfaces.Mapper) {
 
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
-			// TODO: generalize for other input types maybe?
+			// TODO: generalize for other input types maybe.
 			input := &TextInput{data: scanner.Text()}
 			mapper.Map(input, emit)
 		}
@@ -100,7 +102,8 @@ func flushData(outputDir string, numPartitions int, intermediate map[string][]st
 	// Prepare output files
 	writers := make([]*bufio.Writer, 0, numPartitions)
 	for p := range numPartitions {
-		fileName := fmt.Sprintf("%s/partition-%d", outputDir, p)
+		partitionName := fmt.Sprintf("partition-%d", p)
+		fileName := filepath.Join(outputDir, partitionName)
 		file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Fatalf("Failed to open file %s: %v", fileName, err)
