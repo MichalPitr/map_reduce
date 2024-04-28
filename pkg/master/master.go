@@ -22,14 +22,14 @@ import (
 )
 
 func Run(cfg *config.Config) {
-	log.Printf("Running master...")
 	clientset := createKubernetesClient()
 	numNodes := getNumberOfNodes(clientset)
 	mustValidateConfig(cfg, numNodes)
 
 	jobId := fmt.Sprintf("job-%s", time.Now().Format("2006-01-02-15-04-05"))
-	mustCreateJobDir(cfg.NfsPath, jobId)
+	log.Printf("Running master: %s", jobId)
 
+	mustCreateJobDir(cfg.NfsPath, jobId)
 	fileRanges := partitionInputFiles(cfg.InputDir, cfg.NumMappers)
 
 	t0 := time.Now()

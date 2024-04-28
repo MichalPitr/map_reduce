@@ -46,7 +46,6 @@ func main() {
 	log.Printf("cfg: %v", cfg)
 	cfg.NumReducers = 2
 	cfg.NumMappers = 4
-	cfg.Image = "michalpitr/mapreduce:latest"
 
 	cfg.Mapper = &WordCounter{wordRegex: regexp.MustCompile(`\b\w+\b`)}
 	cfg.Reducer = &Adder{}
