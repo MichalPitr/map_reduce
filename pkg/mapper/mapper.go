@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/MichalPitr/map_reduce/pkg/config"
-	"github.com/MichalPitr/map_reduce/pkg/interfaces"
 )
 
 var fnvHash hash.Hash32 = fnv.New32a()
@@ -29,20 +28,17 @@ func (ti *TextInput) Value() string {
 
 func Run(cfg *config.Config) {
 	log.Printf("Running mapper...")
-	mapper := cfg.Mapper
-	processFiles(cfg, mapper)
+	processFiles(cfg)
 }
 
-func processFiles(cfg *config.Config, mapper interfaces.Mapper) {
+func processFiles(cfg *config.Config) {
+	mapper := cfg.Mapper
 	prefix, start, end := parseFileRange(cfg.FileRange)
-	intermediate := make(map[string][]string)
 
 	// Prepare output dir
-	if err := os.MkdirAll(cfg.OutputDir, 0777); err != nil {
-		log.Printf("Creating directory %s failed: %v", cfg.OutputDir, err)
-		os.Exit(1)
-	}
+	mustCreateOutputDir(cfg.OutputDir)
 
+	intermediate := make(map[string][]string)
 	emit := func(key, value string) {
 		intermediate[key] = append(intermediate[key], value)
 	}
@@ -69,6 +65,12 @@ func processFiles(cfg *config.Config, mapper interfaces.Mapper) {
 	}
 
 	flushData(cfg.OutputDir, cfg.NumReducers, intermediate)
+}
+
+func mustCreateOutputDir(dir string) {
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		log.Fatalf("Creating directory %s failed: %v", dir, err)
+	}
 }
 
 func parseFileRange(fileRange string) (string, int, int) {

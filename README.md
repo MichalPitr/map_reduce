@@ -10,7 +10,7 @@ sh build_image.sh
 ```
 then,
 ```
-run main.go --mode=master --input-dir /mnt/input/ --nfs-path /mnt/nfs/
+go run main.go --mode=master --input-dir /mnt/input/ --nfs-path /mnt/nfs/
 ```
 
 Call mapper locally:
