@@ -25,7 +25,7 @@ func Run(cfg *config.Config) {
 	log.Printf("Running master...")
 	clientset := createKubernetesClient()
 	numNodes := getNumberOfNodes(clientset)
-	mustValidateNodeConfig(cfg, numNodes)
+	mustValidateConfig(cfg, numNodes)
 
 	jobId := fmt.Sprintf("job-%s", time.Now().Format("2006-01-02-15-04-05"))
 	mustCreateJobDir(cfg.NfsPath, jobId)
@@ -52,11 +52,15 @@ func mustCreateJobDir(path string, jobId string) {
 	}
 }
 
-func mustValidateNodeConfig(cfg *config.Config, numNodes int) {
+func mustValidateConfig(cfg *config.Config, numNodes int) {
 	if numNodes == 0 {
 		log.Fatal("Need at least 1 node in the cluster.")
 	} else if numNodes < cfg.NumMappers || numNodes < cfg.NumReducers {
 		log.Fatal("More mappers or reducers than available nodes.")
+	}
+
+	if cfg.Image == "" {
+		log.Fatal("Must provide image.")
 	}
 }
 
@@ -187,7 +191,7 @@ func createMapperJobSpec(cfg *config.Config, jobId, mapperId, fileRange string) 
 					Containers: []v1.Container{
 						{
 							Name:    "worker",
-							Image:   "michalpitr/mapreduce:latest",
+							Image:   cfg.Image,
 							Command: []string{"./mapreduce", "--mode", "mapper", "--input-dir", cfg.InputDir, "--output-dir", outputDir, "--file-range", fileRange},
 							VolumeMounts: []v1.VolumeMount{
 								{
@@ -243,7 +247,7 @@ func createReducerJobSpec(cfg *config.Config, jobId string, reducerId int) *batc
 					Containers: []v1.Container{
 						{
 							Name:    "worker",
-							Image:   "michalpitr/mapreduce:latest",
+							Image:   cfg.Image,
 							Command: []string{"./mapreduce", "--mode", "reducer", "--input-dir", inputDir, "--output-dir", outputDir, "--reducer-id", strconv.Itoa(reducerId)},
 							VolumeMounts: []v1.VolumeMount{
 								{

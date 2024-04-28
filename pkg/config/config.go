@@ -15,6 +15,7 @@ type Config struct {
 	NumMappers  int
 	ReducerId   int
 	NfsPath     string
+	Image       string
 
 	Mapper  interfaces.Mapper
 	Reducer interfaces.Reducer
@@ -28,6 +29,7 @@ func SetupJobConfig() *Config {
 	flag.StringVar(&cfg.OutputDir, "output-dir", "", "Path to output directory.")
 	flag.IntVar(&cfg.NumReducers, "num-reducers", 1, "Number of reducers to use.")
 	flag.IntVar(&cfg.NumMappers, "num-mappers", 1, "Number of mappers to use.")
+	flag.StringVar(&cfg.Image, "image", "", "Image with the binary.")
 
 	// Mapper and reducer flags
 	flag.StringVar(&cfg.NfsPath, "nfs-path", "/mnt/nfs", "Base directory where nfs is mounted.")
