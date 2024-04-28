@@ -136,7 +136,7 @@ func launchMappers(cfg *config.Config, clientset *kubernetes.Clientset, jobId st
 	for i := 0; i < cfg.NumMappers; i++ {
 		mapperId := fmt.Sprintf("mapper-%d", i)
 		_ = clientset
-		fmt.Printf("Creating %s for %s\n", mapperId, fileRanges[i])
+		log.Printf("Creating %s for %s", mapperId, fileRanges[i])
 		job := createMapperJobSpec(cfg, jobId, mapperId, fileRanges[i])
 		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})
 		if err != nil {
@@ -220,7 +220,7 @@ func createMapperJobSpec(cfg *config.Config, jobId, mapperId, fileRange string) 
 
 func launchReducers(cfg *config.Config, clientset *kubernetes.Clientset, jobId string) {
 	for i := 0; i < cfg.NumReducers; i++ {
-		fmt.Printf("Creating reducer-%d\n", i)
+		log.Printf("Creating reducer-%d", i)
 		job := createReducerJobSpec(cfg, jobId, i)
 		_, err := clientset.BatchV1().Jobs("default").Create(context.TODO(), job, metav1.CreateOptions{})
 		if err != nil {
